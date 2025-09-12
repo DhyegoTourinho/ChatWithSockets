@@ -27,11 +27,12 @@ public class ChatClient {
                 }
             }).start();
 
-            // Enviar mensagens digitadas
+            // Enviar mensagens digitadas sempre que apertar "ENTER"
             String text;
             while ((text = keyboard.readLine()) != null) {
                 out.println(text);
             }
+            //Tratativa para informar que o servidor caiu.
         } catch (ConnectException e){
             System.out.println("\nO servidor se encontra desligado desligado!\n");
         } catch (IOException e) {
