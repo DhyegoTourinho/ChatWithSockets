@@ -4,11 +4,14 @@ import java.io.*;
 import java.net.*;
 
 public class ChatClient {
-    private static final String SERVER_IP = "localhost";
+    //Mude para ajustar o servidor
+    private static final String SERVER_IP = "127.0.0.1";
+    //private static final String SERVER_IP = "IP_DO_SERVIDOR, PRECISA SER A MAQUINA HOSTEANDO";
     private static final int SERVER_PORT = 8080;
 
     public static void main(String[] args) {
         try (Socket socket = new Socket(SERVER_IP, SERVER_PORT)) {
+            System.out.println(SERVER_IP);
             System.out.println("Conectado ao servidor");
 
             BufferedReader keyboard = new BufferedReader(new InputStreamReader(System.in));
@@ -34,7 +37,7 @@ public class ChatClient {
             }
             //Tratativa para informar que o servidor caiu.
         } catch (ConnectException e){
-            System.out.println("\nO servidor se encontra desligado desligado!\n");
+            System.out.println("\nO servidor se encontra desligado, ou sua porta está incorreta;\nColoque uma porta disponivel na maquina do servidor para se conectar");
         } catch (IOException e) {
             e.printStackTrace();
         }
