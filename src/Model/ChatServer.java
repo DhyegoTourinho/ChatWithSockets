@@ -9,9 +9,9 @@ import java.util.*;
 //TODO: Não enviar mensagem para si mesmo. (FEITO)
 //TODO: Deixar intuitivo que você está mandando msg em grupo (FEITO)
 //TODO: Fazer tratativa para grupos serem sempre 1-N. (FEITO)
+//TODO: Fazer usuário ser encontrado a partir de um toEqualsIgnoreCase(). (FEITO)
 //TODO: Envio de arquivo (URGENTE).
 //TODO: Implementar aceite para iniciar comunicação em grupo.
-//TODO: Fazer usuário ser encontrado a partir de um toEqualsIgnoreCase().
 //TODO: Nome de grupo, mais interface para utilizar
 
 public class ChatServer {
@@ -25,7 +25,8 @@ public class ChatServer {
     public static final String SENDFILE = "/SendFile";
     public static final String WARNINGGROUP = "WarningGroup";
 
-    private static Map<String, ClientHandler> clients = new HashMap<>();
+//    private static Map<String, ClientHandler> clients = new HashMap<>();
+    private static Map<String, ClientHandler> clients = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
 
     public static void main(String[] args) {
         try (ServerSocket serverSocket = new ServerSocket(PORT)) {
@@ -68,11 +69,11 @@ public class ChatServer {
     }
 
     // Envia Aviso individual.
-    public static synchronized void WarningMessage(String targetUser, String type) {
+    public static synchronized void WarningMessage(String targetUser, String type, ClientHandler sender) {
         ClientHandler target = clients.get(targetUser);
         if (target != null) {
-            if (type.equalsIgnoreCase("WarningGroup")) {
-            target.sendMessage("Voce foi adicionado em um grupo");
+            if (type.equalsIgnoreCase(WARNINGGROUP)) {
+            target.sendMessage("======|" + sender.getUserName() + " adicionou voce em um grupo |======");
             }
         }
     }
@@ -161,8 +162,7 @@ public class ChatServer {
 
         public void setUserName(BufferedReader in,  PrintWriter out) throws IOException {
             out.println("Digite seu nome:");
-            userName = in.readLine();
-            this.userName = userName;
+            this.userName = in.readLine();
         }
 
         public void ShowHelp (PrintWriter out) {
@@ -205,15 +205,11 @@ public class ChatServer {
                 out.println("Parabens, você foi autenticado!");
                 out.println("Digite /help para visualizar a lista de comandos.");
                 while ((message = in.readLine()) != null) {
-                    if (message.startsWith(HELP)){
+                    if (message.toLowerCase().startsWith(HELP.toLowerCase())){
                         ShowHelp(out);
                     }
 
-                    if (userName.equals(" ") || userName.isEmpty() || userName.isBlank()) {
-                        ShowHelp(out);
-                    }
-
-                    if (message.startsWith(LISTUSERS)){
+                    if (message.toLowerCase().startsWith(LISTUSERS.toLowerCase())){
                         out.println("==========| Lista de usuarios |======");
                         int i = 0;
                         for (Map.Entry<String, ClientHandler> client : clients.entrySet()) {
@@ -222,7 +218,7 @@ public class ChatServer {
                         }
                     }
 
-                    if (message.startsWith(PRIVATEMESSAGES)) {
+                    if (message.toLowerCase().startsWith(PRIVATEMESSAGES.toLowerCase())) {
                         String[] parts = message.split(" ", 3);
                         if (parts.length >= 3) {
                             String targetUser = parts[1];
@@ -237,7 +233,7 @@ public class ChatServer {
                         }
                     }
 
-                    if(message.startsWith(GROUP)){
+                    if(message.toLowerCase().startsWith(GROUP.toLowerCase())){
                         boolean InGroup = true;
                         List<String> Group = new ArrayList<>();
                         String[] parts = message.split(" ", 5);
@@ -249,9 +245,9 @@ public class ChatServer {
                             out.println("Nao eh possivel criar um grupo com somente voce.");
                         }else {
                             for (int i = 1; i < parts.length; i++) {
-                                if (!parts[i].equals(userName)) {
+                                if (!parts[i].equalsIgnoreCase(userName)) {
                                     Group.add(parts[i]);
-                                    ChatServer.WarningMessage(parts[i], WARNINGGROUP);
+                                    ChatServer.WarningMessage(parts[i], WARNINGGROUP, this);
                                 }
                             }
                             out.println("=================================================");
@@ -259,11 +255,11 @@ public class ChatServer {
                             out.println("Voce esta em um grupo com: ");
                             out.println(Group);
                             while (InGroup) {
-                                if(message.startsWith(EXIT)) {
+                                message = in.readLine();
+                                if(message.toLowerCase().startsWith(EXIT)) {
                                     out.println("============| Você saiu do grupo |============");
                                     InGroup = false;
                                 } else {
-                                    message = in.readLine();
                                     for (String targetUser : Group) {
                                         ChatServer.privateMessage(targetUser, message, this, true);
                                     }
