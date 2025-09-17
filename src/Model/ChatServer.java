@@ -3,16 +3,15 @@ import java.io.*;
 import java.net.*;
 import java.util.*;
 
-
-//TODO: Fazer enndereçamento IP. (FEITO)
+//TODO: Fazer endereçamento IP. (FEITO)
 //TODO: Fazer mensagem descritiva para os comandos. (FEITO)
 //TODO: Não enviar mensagem para si mesmo. (FEITO)
 //TODO: Deixar intuitivo que você está mandando msg em grupo (FEITO)
 //TODO: Fazer tratativa para grupos serem sempre 1-N. (FEITO)
 //TODO: Fazer usuário ser encontrado a partir de um toEqualsIgnoreCase(). (FEITO)
 //TODO: Envio de arquivo (URGENTE).
-//TODO: Implementar aceite para iniciar comunicação em grupo.
-//TODO: Nome de grupo, mais interface para utilizar
+//TODO: Implementar aceite para iniciar comunicação em grupo. (OPCIONAL)
+//TODO: Nome de grupo, mais interface para utilizar (OPCIONAL)
 
 public class ChatServer {
     private static final int PORT = 8080;
@@ -21,12 +20,11 @@ public class ChatServer {
     public static final String HELP = "/help";
     public static final String GROUP = "/group";
     public static final String EXIT = "/exit";
-    public static final String MESSAGEFORALL = "/all";
     public static final String SENDFILE = "/SendFile";
+    public static final String MESSAGEFORALL = "/all";
     public static final String WARNINGGROUP = "WarningGroup";
 
-//    private static Map<String, ClientHandler> clients = new HashMap<>();
-    private static Map<String, ClientHandler> clients = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+    private static final Map<String, ClientHandler> clients = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
 
     public static void main(String[] args) {
         try (ServerSocket serverSocket = new ServerSocket(PORT)) {
@@ -69,11 +67,12 @@ public class ChatServer {
     }
 
     // Envia Aviso individual.
-    public static synchronized void WarningMessage(String targetUser, String type, ClientHandler sender) {
+    public static synchronized void WarningMessage(String targetUser, String type, ClientHandler sender, List<String> Group) {
         ClientHandler target = clients.get(targetUser);
         if (target != null) {
             if (type.equalsIgnoreCase(WARNINGGROUP)) {
             target.sendMessage("======|" + sender.getUserName() + " adicionou voce em um grupo |======");
+            target.sendMessage(sender.getUserName() + " " + Group.toString());
             }
         }
     }
@@ -89,6 +88,7 @@ public class ChatServer {
         clients.remove(userName);
         broadcast(userName + " saiu do chat.", client);
     }
+
     //Parte de envio de arquivo
 //    public static void SendFile(Socket socket, String arquivo) {
 //        try {
@@ -247,7 +247,7 @@ public class ChatServer {
                             for (int i = 1; i < parts.length; i++) {
                                 if (!parts[i].equalsIgnoreCase(userName)) {
                                     Group.add(parts[i]);
-                                    ChatServer.WarningMessage(parts[i], WARNINGGROUP, this);
+                                    ChatServer.WarningMessage(parts[i], WARNINGGROUP, this, Group);
                                 }
                             }
                             out.println("=================================================");
