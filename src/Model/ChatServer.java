@@ -1,5 +1,5 @@
 package Model;
-//adicionei enviar arquivo pra privado tbm
+
 import java.io.*;
 import java.net.*;
 import java.util.*;
@@ -124,6 +124,7 @@ public class ChatServer {
                     // Usando o método "porteiro" para verificar se o usuário existe
                     if (ChatServer.isUserConnected(userName)) {
                         out.println("Nome do usuário indisponivel.");
+                        userName = ""; // Força o loop a continuar
                     }
                     if (userName == null || userName.trim().isEmpty()) {
                         out.println("Nome Invalido.");
@@ -138,16 +139,16 @@ public class ChatServer {
 
                 String message;
                 while ((message = in.readLine()) != null) {
-                    if (message.toLowerCase().startsWith(ChatServer.HELP)) {
+                    if (message.toLowerCase().startsWith(ChatServer.HELP.toLowerCase())) {
                         ShowHelp(out);
-                    } else if (message.toLowerCase().startsWith(ChatServer.LISTUSERS)) {
+                    } else if (message.toLowerCase().startsWith(ChatServer.LISTUSERS.toLowerCase())) {
                         out.println("==========| Lista de usuarios |======");
                         int i = 0;
                         for (String currentUserName : ChatServer.getConnectedUserNames()) {
                             i++;
                             out.println("#" + i + " " + currentUserName);
                         }
-                    } else if (message.toLowerCase().startsWith(ChatServer.PRIVATEMESSAGES)) {
+                    } else if (message.toLowerCase().startsWith(ChatServer.PRIVATEMESSAGES.toLowerCase())) {
                         String[] parts = message.split(" ", 3);
                         if (parts.length >= 3) {
                             String targetUser = parts[1];
@@ -160,7 +161,7 @@ public class ChatServer {
                         } else {
                             sendMessage("Formato inválido. Use: /tell <destinatario> <mensagem>");
                         }
-                    }else if (message.toLowerCase().startsWith("/sendfileto")) {
+                    } else if (message.toLowerCase().startsWith("/sendfileto")) {
                         String[] parts = message.split(" ", 3);
                         if (parts.length == 3) {
                             String targetUser = parts[1];
@@ -178,7 +179,14 @@ public class ChatServer {
                         } else {
                             out.println("Uso inválido. Use: /sendfileto <usuario> <caminho_completo_do_arquivo>");
                         }
-                    } else if (message.toLowerCase().startsWith(ChatServer.GROUP)) {
+                    } else if (message.toLowerCase().startsWith(ChatServer.GETFILE.toLowerCase())) {
+                        String[] getParts = message.split(" ", 2);
+                        if (getParts.length == 2) {
+                            fileTransferManager.requestDownload(this, getParts[1]);
+                        } else {
+                            out.println("Uso inválido. Use: /getfile <ID_do_arquivo>");
+                        }
+                    } else if (message.toLowerCase().startsWith(ChatServer.GROUP.toLowerCase())) {
                         String[] parts = message.split(" ");
                         if (parts.length < 2) {
                             out.println("Formato inválido. Especifique pelo menos um destinatário.");
@@ -215,7 +223,7 @@ public class ChatServer {
                                 if (message == null || message.equalsIgnoreCase(ChatServer.EXIT)) {
                                     out.println("============| Você saiu do grupo |============");
                                     inGroup = false;
-                                } else if (message.toLowerCase().startsWith(ChatServer.SENDFILE)) {
+                                } else if (message.toLowerCase().startsWith(ChatServer.SENDFILE.toLowerCase())) {
                                     String[] fileParts = message.split(" ", 2);
                                     if (fileParts.length == 2) {
                                         File file = new File(fileParts[1]);
@@ -227,10 +235,13 @@ public class ChatServer {
                                     } else {
                                         out.println("Uso inválido. Use: /sendfile <caminho_completo_do_arquivo>");
                                     }
-                                } else if (message.toLowerCase().startsWith(ChatServer.GETFILE)) {
+                                } else if (message.toLowerCase().startsWith(ChatServer.GETFILE.toLowerCase())) {
                                     String[] getParts = message.split(" ", 2);
-                                    if (getParts.length == 2) fileTransferManager.requestDownload(this, getParts[1]);
-                                    else out.println("Uso inválido. Use: /getfile <ID_do_arquivo>");
+                                    if (getParts.length == 2) {
+                                        fileTransferManager.requestDownload(this, getParts[1]);
+                                    } else {
+                                        out.println("Uso inválido. Use: /getfile <ID_do_arquivo>");
+                                    }
                                 } else {
                                     for (String targetUser : groupMembers) {
                                         ChatServer.privateMessage(targetUser, message, this, true);
@@ -238,6 +249,9 @@ public class ChatServer {
                                 }
                             }
                         }
+                    } else {
+                        // Mensagem normal para broadcast
+                        ChatServer.broadcast("[" + userName + "]: " + message, this);
                     }
                 }
             } catch (IOException e) {
@@ -287,8 +301,11 @@ class FileTransferManager implements Runnable {
     }
 
     public void requestDownload(ChatServer.ClientHandler downloader, String fileId) {
+        System.out.println("DEBUG: Solicitação de download recebida - ID: " + fileId + ", Usuário: " + downloader.getUserName());
+
         FileInfo info = pendingFiles.get(fileId);
         if (info != null && info.getTempFilePath() != null) {
+            System.out.println("DEBUG: Arquivo encontrado - " + info.getFileName());
             try {
                 ServerSocket serverSocket = new ServerSocket(0);
                 int port = serverSocket.getLocalPort();
@@ -300,6 +317,7 @@ class FileTransferManager implements Runnable {
                 e.printStackTrace();
             }
         } else {
+            System.out.println("DEBUG: Arquivo não encontrado para ID: " + fileId);
             downloader.sendMessage("ERRO: ID de arquivo inválido ou o arquivo não está mais disponível.");
         }
     }
@@ -325,29 +343,41 @@ class FileTransferManager implements Runnable {
 
     private void handleUpload(FileInfo info) {
         new Thread(() -> {
-            try (Socket clientSocket = info.getUploadSocket().accept()) {
-                info.getUploadSocket().close();
+            try {
+                Socket clientSocket = info.getUploadSocket().accept();
                 System.out.println("Cliente " + info.getSender() + " conectado para upload do arquivo " + info.getFileName());
-                DataInputStream dis = new DataInputStream(clientSocket.getInputStream());
-                File tempFile = new File(tempDir, info.getFileId() + "_" + info.getFileName());
-                try (FileOutputStream fos = new FileOutputStream(tempFile)) {
+
+                try (DataInputStream dis = new DataInputStream(clientSocket.getInputStream());
+                     FileOutputStream fos = new FileOutputStream(new File(tempDir, info.getFileId() + "_" + info.getFileName()))) {
+
                     byte[] buffer = new byte[8192];
                     int bytesRead;
                     long totalRead = 0;
+
                     while (totalRead < info.getFileSize() && (bytesRead = dis.read(buffer)) != -1) {
                         fos.write(buffer, 0, bytesRead);
                         totalRead += bytesRead;
                     }
-                }
-                info.setTempFilePath(tempFile.getAbsolutePath());
-                System.out.println("Arquivo " + info.getFileName() + " recebido com sucesso.");
-                String notification = "FILE_NOTIFICATION|" + info.getSender() + "|" + info.getFileName() + "|" + info.getFileId();
-                for (String recipientName : info.getRecipients()) {
-                    ChatServer.ClientHandler recipientClient = ChatServer.getClientByName(recipientName);
-                    if (recipientClient != null) {
-                        recipientClient.sendMessage(notification);
+
+                    info.setTempFilePath(tempDir.getAbsolutePath() + File.separator + info.getFileId() + "_" + info.getFileName());
+                    System.out.println("Arquivo " + info.getFileName() + " recebido com sucesso.");
+
+                    // Notificar destinatários
+                    String notification = "FILE_NOTIFICATION|" + info.getSender() + "|" + info.getFileName() + "|" + info.getFileId();
+                    for (String recipientName : info.getRecipients()) {
+                        ChatServer.ClientHandler recipientClient = ChatServer.getClientByName(recipientName);
+                        if (recipientClient != null) {
+                            recipientClient.sendMessage(notification);
+                        }
+                    }
+                } finally {
+                    try {
+                        clientSocket.close();
+                    } catch (IOException e) {
+                        System.err.println("Erro ao fechar socket do cliente: " + e.getMessage());
                     }
                 }
+
             } catch (IOException e) {
                 System.err.println("Erro no upload do arquivo " + info.getFileName() + ": " + e.getMessage());
             } finally {
@@ -358,20 +388,30 @@ class FileTransferManager implements Runnable {
 
     private void handleDownload(FileInfo info) {
         new Thread(() -> {
-            try (Socket clientSocket = info.getDownloadSocket().accept()) {
-                info.getDownloadSocket().close();
-                System.out.println("Cliente conectado para download do arquivo " + info.getFileName());
-                File fileToSend = new File(info.getTempFilePath());
-                try (FileInputStream fis = new FileInputStream(fileToSend);
+            try {
+                Socket clientSocket = info.getDownloadSocket().accept();
+                System.out.println("Cliente conectado para download do arquivo: " + info.getFileName());
+
+                try (FileInputStream fis = new FileInputStream(info.getTempFilePath());
                      DataOutputStream dos = new DataOutputStream(clientSocket.getOutputStream())) {
+
                     byte[] buffer = new byte[8192];
                     int bytesRead;
                     while ((bytesRead = fis.read(buffer)) != -1) {
                         dos.write(buffer, 0, bytesRead);
                     }
                     dos.flush();
+
+                    System.out.println("Arquivo " + info.getFileName() + " enviado com sucesso.");
+
+                } finally {
+                    try {
+                        clientSocket.close();
+                    } catch (IOException e) {
+                        System.err.println("Erro ao fechar socket do cliente: " + e.getMessage());
+                    }
                 }
-                System.out.println("Arquivo " + info.getFileName() + " enviado com sucesso.");
+
             } catch (IOException e) {
                 System.err.println("Erro no download do arquivo " + info.getFileName() + ": " + e.getMessage());
             } finally {
@@ -389,8 +429,12 @@ class FileInfo {
     private ServerSocket downloadSocket;
 
     public FileInfo(String fileId, String fileName, long fileSize, String sender, List<String> recipients, ServerSocket uploadSocket) {
-        this.fileId = fileId; this.fileName = fileName; this.fileSize = fileSize;
-        this.sender = sender; this.recipients = recipients; this.uploadSocket = uploadSocket;
+        this.fileId = fileId;
+        this.fileName = fileName;
+        this.fileSize = fileSize;
+        this.sender = sender;
+        this.recipients = recipients;
+        this.uploadSocket = uploadSocket;
     }
 
     public String getFileId() { return fileId; }
@@ -403,6 +447,26 @@ class FileInfo {
     public ServerSocket getDownloadSocket() { return downloadSocket; }
     public void setTempFilePath(String path) { this.tempFilePath = path; }
     public void setDownloadSocket(ServerSocket socket) { this.downloadSocket = socket; }
-    public void closeUploadSocket() { try { if (uploadSocket != null) uploadSocket.close(); } catch (IOException e) {} }
-    public void closeDownloadSocket() { try { if (downloadSocket != null) downloadSocket.close(); } catch (IOException e) {} }
+
+    public void closeUploadSocket() {
+        try {
+            if (uploadSocket != null && !uploadSocket.isClosed()) {
+                uploadSocket.close();
+                System.out.println("Socket de upload fechado para: " + fileName);
+            }
+        } catch (IOException e) {
+            System.err.println("Erro ao fechar socket de upload: " + e.getMessage());
+        }
+    }
+
+    public void closeDownloadSocket() {
+        try {
+            if (downloadSocket != null && !downloadSocket.isClosed()) {
+                downloadSocket.close();
+                System.out.println("Socket de download fechado para: " + fileName);
+            }
+        } catch (IOException e) {
+            System.err.println("Erro ao fechar socket de download: " + e.getMessage());
+        }
+    }
 }
