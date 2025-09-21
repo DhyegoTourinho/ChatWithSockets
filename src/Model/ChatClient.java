@@ -48,14 +48,20 @@ public class ChatClient {
                             System.out.println(">>> Para baixar, digite: /getfile " + fileId);
                         } else if (response.startsWith("DOWNLOAD_READY|")) {
                             String[] parts = response.split("\\|", 4);
-                            String fileName = parts[1];
-                            long fileSize = Long.parseLong(parts[2]);
-                            int port = Integer.parseInt(parts[3]);
-                            // Inicia o download em uma nova thread
-                            startDownload(SERVER_IP, port, fileName, fileSize);
-                        }
-                        else {
-                            System.out.println(response);
+                            if (parts.length == 4) {
+                                String fileName = parts[1];
+                                long fileSize = Long.parseLong(parts[2]);
+                                int port = Integer.parseInt(parts[3]);
+
+                                System.out.println("Preparando download: " + fileName + " (" + fileSize + " bytes) na porta " + port);
+
+                                // Inicia o download em uma nova thread
+                                startDownload(SERVER_IP, port, fileName, fileSize);
+                            } else {
+                                System.out.println("Formato inválido de resposta de download: " + response);
+                            }
+                        } else {
+                            System.out.println(response); // Mensagens normais do chat
                         }
                     }
                 } catch (IOException e) {
@@ -87,13 +93,11 @@ public class ChatClient {
                         System.out.println("Uso inválido. Use: /sendfileto <usuario> <caminho_completo_do_arquivo>");
                     }
                 }
-                if (text.toLowerCase().startsWith("/sendfile ")) {
+                else if (text.toLowerCase().startsWith("/sendfile ")) {
                     String[] parts = text.split(" ", 2);
                     if (parts.length == 2) {
                         String filePath = parts[1];
 
-                        // Quando o usuário digita /sendfile, a thread de upload real será iniciada pela resposta do servidor.
-                        // Aqui apenas validamos e enviamos a mensagem
                         if (filePath.startsWith("\"") && filePath.endsWith("\"")) {
                             filePath = filePath.substring(1, filePath.length() - 1);
                         }
@@ -107,10 +111,14 @@ public class ChatClient {
                     } else {
                         out.println(text);
                     }
-                } else {
+                }
+                else if (text.toLowerCase().startsWith("/getfile ")) {
+                    // Comando getfile - apenas envia para o servidor
                     out.println(text);
                 }
-
+                else {
+                    out.println(text);
+                }
             }
             //Tratativa para informar que o servidor caiu.
         } catch (ConnectException e){
@@ -145,24 +153,52 @@ public class ChatClient {
 
     private static void startDownload(String host, int port, String fileName, long fileSize) {
         new Thread(() -> {
-            try (Socket fileSocket = new Socket(host, port);
-                 DataInputStream dis = new DataInputStream(fileSocket.getInputStream())) {
+            try {
+                System.out.println("Tentando conectar para download: " + host + ":" + port);
+
+                // Configura timeout e tenta conectar
+                Socket fileSocket = new Socket();
+                fileSocket.connect(new InetSocketAddress(host, port), 15000); // 15 segundos timeout
+                fileSocket.setSoTimeout(30000); // Timeout de leitura de 30 segundos
 
                 System.out.println("Conectado para baixar o arquivo: " + fileName);
-                File file = new File(DOWNLOAD_DIR, fileName);
 
-                try (FileOutputStream fos = new FileOutputStream(file)) {
+                try (DataInputStream dis = new DataInputStream(fileSocket.getInputStream());
+                     FileOutputStream fos = new FileOutputStream(new File(DOWNLOAD_DIR, fileName))) {
+
                     byte[] buffer = new byte[8192];
                     int bytesRead;
                     long totalRead = 0;
 
+                    // Barra de progresso simples
+                    System.out.print("Baixando: [");
+                    int lastProgress = -1;
+
                     while (totalRead < fileSize && (bytesRead = dis.read(buffer)) != -1) {
                         fos.write(buffer, 0, bytesRead);
                         totalRead += bytesRead;
-                    }
-                }
-                System.out.println("Download do arquivo '" + fileName + "' concluído com sucesso! Salvo em '" + DOWNLOAD_DIR + "'.");
 
+                        // Mostrar progresso a cada 5%
+                        int progress = (int) ((totalRead * 100) / fileSize);
+                        if (progress / 5 > lastProgress) {
+                            lastProgress = progress / 5;
+                            System.out.print("#");
+                        }
+                    }
+                    System.out.println("] 100%");
+
+                    System.out.println("Download do arquivo '" + fileName + "' concluído com sucesso! Salvo em '" + DOWNLOAD_DIR + "'.");
+
+                } catch (SocketTimeoutException e) {
+                    System.out.println("Erro: Timeout durante o download.");
+                } catch (EOFException e) {
+                    System.out.println("Erro: Conexão fechada prematuramente durante o download.");
+                }
+
+            } catch (SocketTimeoutException e) {
+                System.out.println("Erro: Timeout ao conectar para download.");
+            } catch (ConnectException e) {
+                System.out.println("Erro: Não foi possível conectar para download. Porta pode estar fechada.");
             } catch (IOException e) {
                 System.out.println("Erro durante o download: " + e.getMessage());
                 e.printStackTrace();
