@@ -106,11 +106,11 @@ public class ChatServer {
             out.println(ChatServer.LISTUSERS + " -> Ver usuarios logados");
             out.println(ChatServer.PRIVATEMESSAGES + " destinatario Mensagem -> Enviar mensagem privada");
             out.println(ChatServer.GROUP + " user1 user2 ... -> Criar um grupo de chat [MAX 5]");
+            out.println(ChatServer.SENDFILETO + " destinatario  <caminho_completo_do_arquivo> -> Enviar um arquivo para o destinatario");
+            out.println(ChatServer.GETFILE + " <ID_do_arquivo> -> Baixar um arquivo recebido");
             out.println("======| Comandos de Grupo |======");
             out.println(ChatServer.SENDFILE + " <caminho_completo_do_arquivo> -> Enviar um arquivo para o grupo");
             out.println(ChatServer.GETFILE + " <ID_do_arquivo> -> Baixar um arquivo recebido");
-            out.println(ChatServer.SENDFILETO + " destinatario  <caminho_completo_do_arquivo> -> Enviar um arquivo para o destinatario");
-
         }
 
         @Override
