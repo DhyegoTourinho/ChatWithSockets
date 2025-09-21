@@ -7,7 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class ChatServer {
     private static final int PORT = 8080;
-    public static final String LISTUSERS = "/listUsers";
+    public static final String LISTUSERS = "/listusers";
     public static final String PRIVATEMESSAGES = "/tell";
     public static final String HELP = "/help";
     public static final String GROUP = "/group";
