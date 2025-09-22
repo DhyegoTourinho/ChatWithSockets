@@ -44,7 +44,7 @@ public class ChatClient {
                             String sender = parts[1];
                             String fileName = parts[2];
                             String fileId = parts[3];
-                            System.out.println("\n>>> " + sender + " enviou o arquivo '" + fileName + "' para o grupo.");
+                            System.out.println("\n>>> " + sender + " enviou o arquivo '" + fileName + "'");
                             System.out.println(">>> Para baixar, digite: /getfile " + fileId);
                         } else if (response.startsWith("DOWNLOAD_READY|")) {
                             String[] parts = response.split("\\|", 4);

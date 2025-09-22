@@ -13,7 +13,6 @@ public class ChatServer {
     public static final String GROUP = "/group";
     public static final String EXIT = "/exit";
     public static final String JOINGROUP = "/joingroup";
-    public static final String EXITGROUP = "/exitgroup";
     public static final String SENDFILE = "/sendfile";
     public static final String GETFILE = "/getfile";
     public static final String SENDFILETO = "/sendfileto";
@@ -60,11 +59,15 @@ public class ChatServer {
         }
     }
 
-    public static synchronized void WarningMessage(String targetUser, String type, ClientHandler sender, Group group) {
-        ClientHandler target = getClientByName(targetUser); // Usando o método seguro
-        if (target != null) {
-            target.sendMessage("======|" + sender.getUserName() + " adicionou voce em um grupo |======");
-            target.sendMessage(group.toString());
+    public static synchronized void WarningMessage(String targetUser, ClientHandler sender, Group group) {
+        for (String member : group.groupMembers) {
+            if (!member.equalsIgnoreCase(sender.userName)) {
+                ClientHandler target = getClientByName(targetUser);
+                if (target != null) {
+                    target.sendMessage("======|" + sender.getUserName() + " adicionou voce em um grupo |======");
+                    target.sendMessage(group.toString());
+                }
+            }
         }
     }
 
@@ -109,37 +112,53 @@ public class ChatServer {
         public void ShowHelp(PrintWriter out) {
             out.println("======| Lista de comandos |======");
             out.println(ChatServer.LISTUSERS + " -> Ver usuarios logados");
-            out.println(ChatServer.PRIVATEMESSAGES + " destinatario Mensagem -> Enviar mensagem privada");
-            out.println(ChatServer.GROUP + " user1 user2 ... -> Criar um grupo de chat [MAX 5]");
+            out.println(ChatServer.PRIVATEMESSAGES + " <destinatario> <Mensagem> -> Enviar mensagem privada");
+            out.println(ChatServer.GROUP + " <nome do grupo> <usuario1> <usuario2> ... -> Criar um grupo de chat [MAX 5]");
+            out.println(ChatServer.JOINGROUP + " <nome do grupo> -> Entra no grupo.");
             out.println("======| Comandos de Grupo |======");
             out.println(ChatServer.SENDFILE + " <caminho_completo_do_arquivo> -> Enviar um arquivo para o grupo");
             out.println(ChatServer.GETFILE + " <ID_do_arquivo> -> Baixar um arquivo recebido");
-            out.println(ChatServer.SENDFILETO + " destinatario  <caminho_completo_do_arquivo> -> Enviar um arquivo para o destinatario");
-
+            out.println(ChatServer.SENDFILETO + " <destinatario>  <caminho_completo_do_arquivo> -> Enviar um arquivo para o destinatario");
         }
 
-        public void GroupCommunication(String message, Group groupAux) {
-            if (message.toLowerCase().startsWith(ChatServer.SENDFILE)) {
-                String[] fileParts = message.split(" ", 2);
-                if (fileParts.length == 2) {
-                    File file = new File(fileParts[1]);
-                    if (file.exists() && !file.isDirectory()) {
-                        fileTransferManager.requestUpload(this, groupAux.groupMembers, file);
-                    } else {
-                        out.println("ERRO: Arquivo não encontrado ou é um diretório.");
-                    }
+        public void GroupCommunication(Group groupAux) throws IOException {
+            String message;
+            boolean inGroup = true;
+            while (inGroup) {
+                message = in.readLine();
+                if (message == null || message.equalsIgnoreCase(ChatServer.EXIT)) {
+                    out.println("============| Você saiu do grupo |============");
+                    inGroup = false;
+                    groupAux.remove(this.userName);
                 } else {
-                    out.println("Uso inválido. Use: /sendfile <caminho_completo_do_arquivo>");
-                }
-            } else if (message.toLowerCase().startsWith(ChatServer.GETFILE)) {
-                String[] getParts = message.split(" ", 2);
-                if (getParts.length == 2) fileTransferManager.requestDownload(this, getParts[1]);
-                else out.println("Uso inválido. Use: /getfile <ID_do_arquivo>");
-            } else {
-                for (String targetUser : groupAux.groupMembers) {
-                    ChatServer.privateMessage(targetUser, message, this, true);
+                    if (message.toLowerCase().startsWith(ChatServer.SENDFILE)) {
+                        String[] fileParts = message.split(" ", 2);
+                        if (fileParts.length == 2) {
+                            File file = new File(fileParts[1]);
+                            if (file.exists() && !file.isDirectory()) {
+                                fileTransferManager.requestUpload(this, groupAux.groupMembers, file);
+                            } else {
+                                out.println("ERRO: Arquivo não encontrado ou é um diretório.");
+                            }
+                        } else {
+                            out.println("Uso inválido. Use: /sendfile <caminho_completo_do_arquivo>");
+                        }
+                    } else if (message.toLowerCase().startsWith(ChatServer.GETFILE)) {
+                        String[] getParts = message.split(" ", 2);
+                        if (getParts.length == 2){
+                            fileTransferManager.requestDownload(this, getParts[1]);
+                        }
+                        else {
+                            out.println("Uso inválido. Use: /getfile <ID_do_arquivo>");
+                        }
+                    } else {
+                        for (String targetUser : groupAux.groupMembers) {
+                            ChatServer.privateMessage(targetUser, message, this, true);
+                        }
+                    }
                 }
             }
+
         };
 
         @Override
@@ -150,7 +169,7 @@ public class ChatServer {
 
                 do {
                     setUserName(in, out);
-                    // Usando o método "porteiro" para verificar se o usuário existe
+                    // Usando o metodo "porteiro" para verificar se o usuário existe
                     if (ChatServer.isUserConnected(userName)) {
                         out.println("Nome do usuário indisponivel.");
                     }
@@ -189,7 +208,16 @@ public class ChatServer {
                         } else {
                             sendMessage("Formato inválido. Use: /tell <destinatario> <mensagem>");
                         }
-                    }else if (message.toLowerCase().startsWith(SENDFILETO)) {
+                    } else if (message.toLowerCase().startsWith(ChatServer.GETFILE)){
+                        String[] parts = message.split(" ", 2);
+                        if (parts.length == 2){
+                            fileTransferManager.requestDownload(this, parts[1]);
+                        }
+                        else {
+                            out.println("Uso inválido. Use: /getfile <ID_do_arquivo>");
+                        }
+                    }
+                    else if (message.toLowerCase().startsWith(SENDFILETO)) {
                         String[] parts = message.split(" ", 3);
                         if (parts.length == 3) {
                             String targetUser = parts[1];
@@ -211,23 +239,16 @@ public class ChatServer {
                         String[] parts = message.split(" ");
                         if (parts.length == 2) {
                             Group groupAux = groups.stream()
-                                    .filter(g -> g.getName().equals(parts[1]))
-                                    .findFirst()
-                                    .orElse(null);
+                                                    .filter(g -> g.getName().equals(parts[1]))
+                                                    .findFirst()
+                                                    .orElse(null);
                             if (groupAux == null) {
                                 out.println("Grupo " + parts[1] + " nao encontrado");
                                 continue;
                             }
-                            boolean inGroup = true;
-                            while (inGroup) {
-                                message = in.readLine();
-                                if (message == null || message.equalsIgnoreCase(ChatServer.EXIT)) {
-                                    out.println("============| Você saiu do grupo |============");
-                                    inGroup = false;
-                                } else {
-                                    GroupCommunication(message, groupAux);
-                                }
-                            }
+                            GroupCommunication(groupAux);
+                        } else {
+                            out.println("Formato invalido. Tente: /joinGroup <Nome do Grupo>");
                         }
 
                     } else if (message.toLowerCase().startsWith(ChatServer.GROUP)) {
@@ -262,22 +283,12 @@ public class ChatServer {
                         } else {
                             for (String member : groupAux.groupMembers) {
                                 if (!member.equalsIgnoreCase(userName)) {
-                                    ChatServer.WarningMessage(member, "WarningGroup", this, groupAux);
+                                    ChatServer.WarningMessage(member, this, groupAux);
                                 }
                             }
                             out.println("=================================================");
-                            out.println("Voce criou um grupo com: " + groupAux.groupMembers.toString());
-                            boolean inGroup = true;
-                            while (inGroup) {
-                                message = in.readLine();
-                                if (message == null || message.equalsIgnoreCase(ChatServer.EXIT)) {
-                                    out.println("============| Você saiu do grupo |============");
-                                    inGroup = false;
-                                } else {
-                                    GroupCommunication(message, groupAux);
-                                }
-
-                            }
+                            out.println("Voce criou um grupo com: " + groupAux.groupMembers.toString() + "\n");
+                            GroupCommunication(groupAux);
                         }
                     }
                 }
@@ -337,11 +348,11 @@ class FileTransferManager implements Runnable {
                 downloader.sendMessage("DOWNLOAD_READY|" + info.getFileName() + "|" + info.getFileSize() + "|" + port);
                 System.out.println("Servidor pronto para enviar " + info.getFileName() + " para " + downloader.getUserName() + " na porta " + port);
             } catch (IOException e) {
-                downloader.sendMessage("ERRO: Não foi possível iniciar o envio do arquivo.");
+                downloader.sendMessage("ERRO: Não foi possivel iniciar o envio do arquivo.");
                 e.printStackTrace();
             }
         } else {
-            downloader.sendMessage("ERRO: ID de arquivo inválido ou o arquivo não está mais disponível.");
+            downloader.sendMessage("ERRO: ID de arquivo invalido ou o arquivo não está mais disponivel.");
         }
     }
 
@@ -423,10 +434,11 @@ class FileTransferManager implements Runnable {
 }
 
 class FileInfo {
-    private String fileId, fileName, sender, tempFilePath;
-    private long fileSize;
-    private List<String> recipients;
-    private ServerSocket uploadSocket;
+    private final String fileId, fileName, sender;
+    private String tempFilePath;
+    private final long fileSize;
+    private final List<String> recipients;
+    private final ServerSocket uploadSocket;
     private ServerSocket downloadSocket;
 
     public FileInfo(String fileId, String fileName, long fileSize, String sender, List<String> recipients, ServerSocket uploadSocket) {
@@ -444,6 +456,6 @@ class FileInfo {
     public ServerSocket getDownloadSocket() { return downloadSocket; }
     public void setTempFilePath(String path) { this.tempFilePath = path; }
     public void setDownloadSocket(ServerSocket socket) { this.downloadSocket = socket; }
-    public void closeUploadSocket() { try { if (uploadSocket != null) uploadSocket.close(); } catch (IOException e) {} }
-    public void closeDownloadSocket() { try { if (downloadSocket != null) downloadSocket.close(); } catch (IOException e) {} }
+    public void closeUploadSocket() { try { if (uploadSocket != null) uploadSocket.close(); } catch (IOException e) {e.printStackTrace();} }
+    public void closeDownloadSocket() { try { if (downloadSocket != null) downloadSocket.close(); } catch (IOException e) { e.printStackTrace();} }
 }

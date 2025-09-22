@@ -27,3 +27,5 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+/client_downloads/
+/server_temp_files/
