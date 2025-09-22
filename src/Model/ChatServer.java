@@ -12,9 +12,12 @@ public class ChatServer {
     public static final String HELP = "/help";
     public static final String GROUP = "/group";
     public static final String EXIT = "/exit";
+    public static final String JOINGROUP = "/joingroup";
+    public static final String EXITGROUP = "/exitgroup";
     public static final String SENDFILE = "/sendfile";
     public static final String GETFILE = "/getfile";
     public static final String SENDFILETO = "/sendfileto";
+    private static final List<Group> groups = new ArrayList<>();
 
     // A lista de clientes é mantida como PRIVATE para segurança e encapsulamento.
     private static final Map<String, ClientHandler> clients = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
@@ -44,22 +47,24 @@ public class ChatServer {
     }
 
     public static synchronized void privateMessage(String targetUser, String message, ClientHandler sender, boolean groupMessage) {
-        ClientHandler target = getClientByName(targetUser); // Usando o método seguro
-        String targetPrefixo = groupMessage ? "Mensagem em Grupo de " : "Privado de ";
-        String senderPrefixo = groupMessage ? "Mensagem em Grupo para " : "Privado para ";
-        if (target != null) {
-            target.sendMessage("[" + targetPrefixo + sender.getUserName() + "]: " + message);
-            sender.sendMessage("[" + senderPrefixo + targetUser + "]: " + message);
-        } else {
-            sender.sendMessage("Usuário '" + targetUser + "' não encontrado.");
+        if (!targetUser.equalsIgnoreCase(sender.userName)){
+            ClientHandler target = getClientByName(targetUser); // Usando o método seguro
+            String targetPrefixo = groupMessage ? "Mensagem em Grupo de " : "Privado de ";
+            String senderPrefixo = groupMessage ? "Mensagem em Grupo para " : "Privado para ";
+            if (target != null) {
+                target.sendMessage("[" + targetPrefixo + sender.getUserName() + "]: " + message);
+                sender.sendMessage("[" + senderPrefixo + targetUser + "]: " + message);
+            } else {
+                sender.sendMessage("Usuário '" + targetUser + "' não encontrado.");
+            }
         }
     }
 
-    public static synchronized void WarningMessage(String targetUser, String type, ClientHandler sender, List<String> group) {
+    public static synchronized void WarningMessage(String targetUser, String type, ClientHandler sender, Group group) {
         ClientHandler target = getClientByName(targetUser); // Usando o método seguro
         if (target != null) {
             target.sendMessage("======|" + sender.getUserName() + " adicionou voce em um grupo |======");
-            target.sendMessage(sender.getUserName() + " " + group.toString());
+            target.sendMessage(group.toString());
         }
     }
 
@@ -113,6 +118,30 @@ public class ChatServer {
 
         }
 
+        public void GroupCommunication(String message, Group groupAux) {
+            if (message.toLowerCase().startsWith(ChatServer.SENDFILE)) {
+                String[] fileParts = message.split(" ", 2);
+                if (fileParts.length == 2) {
+                    File file = new File(fileParts[1]);
+                    if (file.exists() && !file.isDirectory()) {
+                        fileTransferManager.requestUpload(this, groupAux.groupMembers, file);
+                    } else {
+                        out.println("ERRO: Arquivo não encontrado ou é um diretório.");
+                    }
+                } else {
+                    out.println("Uso inválido. Use: /sendfile <caminho_completo_do_arquivo>");
+                }
+            } else if (message.toLowerCase().startsWith(ChatServer.GETFILE)) {
+                String[] getParts = message.split(" ", 2);
+                if (getParts.length == 2) fileTransferManager.requestDownload(this, getParts[1]);
+                else out.println("Uso inválido. Use: /getfile <ID_do_arquivo>");
+            } else {
+                for (String targetUser : groupAux.groupMembers) {
+                    ChatServer.privateMessage(targetUser, message, this, true);
+                }
+            }
+        };
+
         @Override
         public void run() {
             try {
@@ -160,7 +189,7 @@ public class ChatServer {
                         } else {
                             sendMessage("Formato inválido. Use: /tell <destinatario> <mensagem>");
                         }
-                    }else if (message.toLowerCase().startsWith("/sendfileto")) {
+                    }else if (message.toLowerCase().startsWith(SENDFILETO)) {
                         String[] parts = message.split(" ", 3);
                         if (parts.length == 3) {
                             String targetUser = parts[1];
@@ -178,64 +207,76 @@ public class ChatServer {
                         } else {
                             out.println("Uso inválido. Use: /sendfileto <usuario> <caminho_completo_do_arquivo>");
                         }
-                    } else if (message.toLowerCase().startsWith(ChatServer.GROUP)) {
+                    } else if (message.toLowerCase().startsWith(JOINGROUP)) {
                         String[] parts = message.split(" ");
-                        if (parts.length < 2) {
-                            out.println("Formato inválido. Especifique pelo menos um destinatário.");
-                            continue;
-                        }
-                        if (parts.length > 6) { // 1 para /group + 5 usuários
-                            out.println("Limite de 5 usuários por grupo excedido.");
-                            continue;
-                        }
-
-                        List<String> groupMembers = new ArrayList<>();
-                        for (int i = 1; i < parts.length; i++) {
-                            String targetUser = parts[i];
-                            if (!targetUser.equalsIgnoreCase(userName) && ChatServer.isUserConnected(targetUser)) {
-                                groupMembers.add(targetUser);
-                            } else if (!ChatServer.isUserConnected(targetUser)) {
-                                out.println("Aviso: Usuário '" + targetUser + "' não encontrado.");
+                        if (parts.length == 2) {
+                            Group groupAux = groups.stream()
+                                    .filter(g -> g.getName().equals(parts[1]))
+                                    .findFirst()
+                                    .orElse(null);
+                            if (groupAux == null) {
+                                out.println("Grupo " + parts[1] + " nao encontrado");
+                                continue;
                             }
-                        }
-
-                        if (groupMembers.isEmpty()) {
-                            out.println("Nenhum usuário válido foi adicionado ao grupo.");
-                        } else {
-                            for (String member : groupMembers) {
-                                ChatServer.WarningMessage(member, "WarningGroup", this, groupMembers);
-                            }
-                            out.println("=================================================");
-                            out.println("======| Você está em um grupo. Digite /exit para sair. |======");
-                            out.println("Você está em um grupo com: " + groupMembers);
-
                             boolean inGroup = true;
                             while (inGroup) {
                                 message = in.readLine();
                                 if (message == null || message.equalsIgnoreCase(ChatServer.EXIT)) {
                                     out.println("============| Você saiu do grupo |============");
                                     inGroup = false;
-                                } else if (message.toLowerCase().startsWith(ChatServer.SENDFILE)) {
-                                    String[] fileParts = message.split(" ", 2);
-                                    if (fileParts.length == 2) {
-                                        File file = new File(fileParts[1]);
-                                        if (file.exists() && !file.isDirectory()) {
-                                            fileTransferManager.requestUpload(this, groupMembers, file);
-                                        } else {
-                                            out.println("ERRO: Arquivo não encontrado ou é um diretório.");
-                                        }
-                                    } else {
-                                        out.println("Uso inválido. Use: /sendfile <caminho_completo_do_arquivo>");
-                                    }
-                                } else if (message.toLowerCase().startsWith(ChatServer.GETFILE)) {
-                                    String[] getParts = message.split(" ", 2);
-                                    if (getParts.length == 2) fileTransferManager.requestDownload(this, getParts[1]);
-                                    else out.println("Uso inválido. Use: /getfile <ID_do_arquivo>");
                                 } else {
-                                    for (String targetUser : groupMembers) {
-                                        ChatServer.privateMessage(targetUser, message, this, true);
-                                    }
+                                    GroupCommunication(message, groupAux);
                                 }
+                            }
+                        }
+
+                    } else if (message.toLowerCase().startsWith(ChatServer.GROUP)) {
+                        String[] parts = message.split(" ");
+                        if (parts.length <= 2) {
+                            out.println("Formato inválido. Especifique pelo menos um destinatário.");
+                            continue;
+                        }
+                        if (parts.length > 7) { // 1 para /group + 5 usuários
+                            out.println("Limite de 5 usuários por grupo excedido.");
+                            continue;
+                        }
+                        //add nome + criador + instancia a classe para tornar disponível para outros usuários entrar
+                        String name = parts[1];
+                        Group groupAux = new Group(name, userName);
+                        groups.add(groupAux);
+                        //List<String> groupMembers = new ArrayList<>();
+
+                        for (int i = 2; i < parts.length; i++) {
+                            String targetUser = parts[i];
+                            if (!targetUser.equalsIgnoreCase(userName) && ChatServer.isUserConnected(targetUser)) {
+                                //Add na classe nova
+                                groupAux.add(targetUser);
+                                //groupMembers.add(targetUser);
+                            } else if (!ChatServer.isUserConnected(targetUser)) {
+                                out.println("Aviso: Usuário '" + targetUser + "' não encontrado.");
+                            }
+                        }
+
+                        if (groupAux.groupMembers.isEmpty()) {
+                            out.println("Nenhum usuário válido foi adicionado ao grupo.");
+                        } else {
+                            for (String member : groupAux.groupMembers) {
+                                if (!member.equalsIgnoreCase(userName)) {
+                                    ChatServer.WarningMessage(member, "WarningGroup", this, groupAux);
+                                }
+                            }
+                            out.println("=================================================");
+                            out.println("Voce criou um grupo com: " + groupAux.groupMembers.toString());
+                            boolean inGroup = true;
+                            while (inGroup) {
+                                message = in.readLine();
+                                if (message == null || message.equalsIgnoreCase(ChatServer.EXIT)) {
+                                    out.println("============| Você saiu do grupo |============");
+                                    inGroup = false;
+                                } else {
+                                    GroupCommunication(message, groupAux);
+                                }
+
                             }
                         }
                     }
