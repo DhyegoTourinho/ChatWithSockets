@@ -1,9 +1,7 @@
 package Model;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.TreeMap;
 
 public class Group {
     private final String name;
@@ -17,7 +15,10 @@ public class Group {
     }
 
     public void add(String member) {
-        groupMembers.add(member);
+        // Evita duplicatas ao adicionar
+        if (!groupMembers.contains(member)) {
+            groupMembers.add(member);
+        }
     }
 
     public void remove(String member) {
@@ -36,10 +37,14 @@ public class Group {
         return creator;
     }
 
+    public boolean isMember(String member) {
+        return groupMembers.contains(member);
+    }
+
     @Override
     public String toString() {
         return "Nome do grupo: " + getName() + "\n"
-               + "Criador do grupo: " + getCreator() + "\n"
-               + "Membros: " + groupMembers.toString();
+                + "Criador do grupo: " + getCreator() + "\n"
+                + "Membros/Convidados: " + groupMembers.toString();
     }
 }
